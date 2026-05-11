@@ -1,0 +1,8 @@
+Discovery started
+[CHG] Controller AA:BB:CC:00:11:22 Discovering: yes
+[NEW] Device 28:57:BE:DE:AD:01 WyzeCam-V3
+[NEW] Device 11:22:33:44:55:66 Galaxy-Buds
+[CHG] Device 28:57:BE:DE:AD:01 RSSI: -42
+[NEW] Device 2C:AA:8E:AB:CD:EF
+[CHG] Device 2C:AA:8E:AB:CD:EF RSSI: -77
+[CHG] Controller AA:BB:CC:00:11:22 Discovering: no

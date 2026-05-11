@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nmaprun scanner="nmap" args="nmap -sn -oX - 192.168.1.0/24" start="1714000000" version="7.94">
+  <host>
+    <status state="up" reason="arp-response" reason_ttl="0"/>
+    <address addr="192.168.1.1" addrtype="ipv4"/>
+    <address addr="A4:2B:B0:11:22:33" addrtype="mac" vendor="NETGEAR"/>
+  </host>
+  <host>
+    <status state="up" reason="arp-response" reason_ttl="0"/>
+    <address addr="192.168.1.42" addrtype="ipv4"/>
+    <address addr="28:57:BE:00:11:22" addrtype="mac" vendor="Hikvision Digital Technology Co.,Ltd."/>
+  </host>
+  <host>
+    <status state="down" reason="no-response" reason_ttl="0"/>
+    <address addr="192.168.1.99" addrtype="ipv4"/>
+  </host>
+  <host>
+    <status state="up" reason="arp-response" reason_ttl="0"/>
+    <address addr="192.168.1.250" addrtype="ipv4"/>
+    <address addr="F0:18:98:DE:AD:BE" addrtype="mac" vendor="Apple, Inc."/>
+  </host>
+</nmaprun>

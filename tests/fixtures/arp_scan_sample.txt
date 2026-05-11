@@ -1,0 +1,9 @@
+Interface: wlan0, type: EN10MB, MAC: aa:bb:cc:dd:ee:ff, IPv4: 192.168.1.5
+Starting arp-scan 1.9.7 with 256 hosts (https://github.com/royhills/arp-scan)
+192.168.1.1	a4:2b:b0:11:22:33	NETGEAR
+192.168.1.42	28:57:be:00:11:22	Hikvision Digital Technology Co.,Ltd.
+192.168.1.77	2c:aa:8e:aa:bb:cc	Hualai (Beijing) Technology Co., Ltd.
+192.168.1.250	f0:18:98:de:ad:be	Apple, Inc.
+
+4 packets received by filter, 0 packets dropped by kernel
+Ending arp-scan 1.9.7: 256 hosts scanned in 1.534 seconds (166.93 hosts/sec). 4 responded
