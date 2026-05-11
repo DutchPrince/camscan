@@ -10,9 +10,10 @@ from rich.console import Console
 
 from camscan import __version__
 from camscan import bluetooth as bt_mod
+from camscan import services as svc_mod
 from camscan import wifi as wifi_mod
 from camscan.oui import normalize, vendor_of
-from camscan.report import render_bluetooth, render_wifi, to_json
+from camscan.report import render_bluetooth, render_services, render_wifi, to_json
 from camscan.runners import MissingBinaryError, NeedsRootError
 from camscan.vendors import classify
 from camscan.wifi import ScanError
@@ -146,6 +147,67 @@ def scan_all(
 
     if json_out:
         _write_json(json_out, to_json(wifi=wifi_devices, bluetooth=bt_devices))
+        console.print(f"[green]Wrote {json_out}[/green]")
+
+
+@app.command()
+def services(
+    hosts: list[str] = typer.Argument(  # noqa: B008
+        None,
+        help="One or more IP/hostnames to probe. Omit to discover via --target.",
+    ),
+    target: str | None = typer.Option(
+        None,
+        "--target",
+        help="CIDR to discover hosts in first (e.g. 192.168.1.0/24).",
+    ),
+    interface: str | None = typer.Option(
+        None, "-i", "--interface", help="Interface used during host discovery."
+    ),
+    timeout: float = typer.Option(
+        3.0, "--probe-timeout", help="Per-probe TCP timeout in seconds."
+    ),
+    discovery_timeout: float = typer.Option(
+        90.0, "--discovery-timeout", help="Host-discovery (nmap) timeout."
+    ),
+    workers: int = typer.Option(20, "--workers", help="Concurrent probe workers."),
+    json_out: Path | None = typer.Option(None, "--json"),
+    no_color: bool = typer.Option(False, "--no-color"),
+) -> None:
+    """Probe hosts for camera services (RTSP, HTTP banner, vendor fingerprints).
+
+    Works without root or ARP access — useful in proot / UserLAnd / Docker
+    where OUI-based detection can't read the kernel ARP cache.
+    """
+    console = _console(no_color)
+    console.print(_DISCLAIMER)
+
+    targets: list[str]
+    if hosts:
+        targets = list(hosts)
+    else:
+        try:
+            devices = wifi_mod.active_scan(
+                interface=interface, timeout=discovery_timeout, target=target
+            )
+        except (NeedsRootError, MissingBinaryError, ScanError) as e:
+            console.print(f"[red]Host discovery failed: {e}[/red]")
+            console.print(
+                "[yellow]Tip: pass IP arguments directly to skip discovery, "
+                "or use --target <cidr>.[/yellow]"
+            )
+            raise typer.Exit(code=4) from e
+        targets = [d.ip for d in devices if d.ip]
+
+    if not targets:
+        console.print("[yellow]No hosts to probe.[/yellow]")
+        raise typer.Exit(code=0)
+
+    console.print(f"Probing {len(targets)} host(s)…")
+    matches = svc_mod.scan_hosts(targets, timeout=timeout, workers=workers)
+    render_services(console, matches)
+    if json_out:
+        _write_json(json_out, to_json(services=matches))
         console.print(f"[green]Wrote {json_out}[/green]")
 
 

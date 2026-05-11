@@ -16,6 +16,7 @@ Axis, Bosch, Eufy, Ring, Nest, and more).
 |--------------------------------|---------------|
 | WiFi LAN scan (OUI lookup)     | ✅ Phase 1    |
 | Bluetooth LE scan (OUI lookup) | ✅ Phase 1    |
+| Service probe (RTSP / HTTP)    | ✅ Phase 1.5  |
 | 802.11 monitor-mode capture    | ⏳ Phase 2    |
 | BLE manufacturer-data deep dig | ⏳ Phase 2    |
 | RF spectrum / SDR sweep        | ❌ Out of scope (needs hardware) |
@@ -60,9 +61,34 @@ sudo camscan wifi -i wlan0
 # Scan nearby Bluetooth Low Energy devices
 camscan bluetooth --duration 12
 
+# Service probe: identify cameras by RTSP/HTTP banners (works without root)
+camscan services --target 192.168.1.0/24
+camscan services 192.168.1.42 192.168.1.43       # explicit hosts
+
 # Run both, write a JSON report
 sudo camscan all --json /tmp/report.json
 ```
+
+### Service probing — when OUI lookup isn't available
+
+Some environments (proot-based Kali on Android via UserLAnd, Docker without
+`--cap-add=NET_RAW`) can't reach the kernel ARP cache, so MAC-vendor
+classification doesn't work. `camscan services` skips ARP entirely and
+identifies cameras by what they speak on the wire:
+
+- **RTSP/554** — virtually every IP camera responds to `OPTIONS rtsp://…`
+- **HTTP/80, 8080, 8000** — `Server:` header, `WWW-Authenticate` realm
+  (e.g. `WEB_REALM_HIKVISION`, `WEB_REALM_DAHUA`), page title, body hints
+  (`/ISAPI/`, `/cgi-bin/snapshot.cgi`, `/onvif/`)
+
+Vendor-specific fingerprints in `camscan/services.py` cover Hikvision,
+Dahua, Reolink, Wyze, Axis, Foscam, Amcrest, Tapo, Eufy, Arlo, Nest, Ring,
+Mobotix, Bosch, and Ubiquiti UniFi. Hosts that don't match a specific
+vendor but expose generic camera signals (Boa server, GoAhead-Webs, an
+RTSP responder on 554) are still flagged at lower confidence.
+
+Concurrency is `--workers` (default 20), so a /22 of ~27 live hosts
+finishes in well under a minute.
 
 ### Example output
 
@@ -104,8 +130,9 @@ camscan/
 ├── cli.py          # Typer subcommands
 ├── oui.py          # MAC normalization + IEEE OUI lookup (via `manuf`)
 ├── vendors.py      # Camera-vendor classification (loads data/vendors.json)
-├── wifi.py         # Active LAN scan: arp-scan → fallback to nmap
+├── wifi.py         # Active LAN scan: arp-scan → fallback to nmap + /proc/net/arp
 ├── bluetooth.py    # BLE scan via bleak → fallback to bluetoothctl
+├── services.py     # RTSP/HTTP probe + vendor fingerprints (no root needed)
 ├── report.py       # rich tables + JSON exporter
 ├── runners.py      # subprocess + sudo helpers
 └── data/
@@ -115,6 +142,11 @@ camscan/
 
 ## Limitations
 
+- **Restricted environments (UserLAnd, Docker).** proot strips the kernel
+  ARP table from the chroot's view of `/proc` and blocks netlink, so MAC
+  addresses for LAN hosts aren't reachable from userspace. `camscan wifi`
+  will still enumerate IPs but won't flag vendors. Use `camscan services`
+  (RTSP/HTTP fingerprinting) instead — it needs only TCP connect.
 - **MAC randomization.** Many modern phones and some cameras randomize
   their MAC. OUI lookup misses those.
 - **Joined network only.** `arp-scan` finds devices on the WiFi you're

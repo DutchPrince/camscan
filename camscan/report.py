@@ -71,14 +71,69 @@ def render_bluetooth(console: Console, devices: Iterable) -> None:
     console.print(table)
 
 
-def to_json(*, wifi: Iterable | None = None, bluetooth: Iterable | None = None) -> dict:
-    """Return a JSON-serializable dict summarising one or both scans."""
+def to_json(
+    *,
+    wifi: Iterable | None = None,
+    bluetooth: Iterable | None = None,
+    services: Iterable | None = None,
+) -> dict:
+    """Return a JSON-serializable dict summarising one or more scans."""
     payload: dict[str, Any] = {}
     if wifi is not None:
         payload["wifi"] = [_device_to_dict(d) for d in wifi]
     if bluetooth is not None:
         payload["bluetooth"] = [_device_to_dict(d) for d in bluetooth]
+    if services is not None:
+        payload["services"] = [_service_to_dict(m) for m in services]
     return payload
+
+
+def render_services(console: Console, matches: Iterable) -> None:
+    """Render service-probe results as a rich table."""
+    matches = list(matches)
+    flagged = sum(1 for m in matches if m.is_flagged)
+    table = Table(
+        title=f"Service probe — {len(matches)} host(s), {flagged} flagged",
+        show_lines=False,
+    )
+    table.add_column("Flag", justify="center", no_wrap=True)
+    table.add_column("Host", no_wrap=True)
+    table.add_column("Vendor", no_wrap=True)
+    table.add_column("Confidence")
+    table.add_column("Evidence")
+
+    for m in matches:
+        if not m.is_flagged:
+            continue
+        flag = "[bold red]CAM[/]"
+        confidence = (
+            f"[{_confidence_color(m.confidence)}]{m.confidence}[/]"
+        )
+        evidence = "\n".join(m.evidence)
+        table.add_row(flag, m.host, m.vendor or "[dim]unknown vendor[/]", confidence, evidence)
+    console.print(table)
+
+
+def _service_to_dict(match: Any) -> dict[str, Any]:
+    data = {
+        "host": match.host,
+        "vendor": match.vendor,
+        "confidence": match.confidence,
+        "evidence": list(match.evidence),
+        "probes": [
+            {
+                "host": p.host,
+                "port": p.port,
+                "protocol": p.protocol,
+                "server": p.server,
+                "title": p.title,
+                "realm": p.realm,
+                "rtsp_status": p.rtsp_status,
+            }
+            for p in match.probes
+        ],
+    }
+    return data
 
 
 def _device_to_dict(device: Any) -> dict[str, Any]:
