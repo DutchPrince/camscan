@@ -62,6 +62,11 @@ _FINGERPRINTS: tuple[tuple[str, Confidence, re.Pattern, str], ...] = (
     ("Dahua",     "high",   re.compile(r"webs/[\d.]+", re.I),         "server"),
     ("Dahua",     "medium", re.compile(r"DH-[A-Z0-9-]+", re.I),       "body"),
     ("Reolink",   "high",   re.compile(r"Reolink", re.I),             "any"),
+    # Reolink doorbells / argus-family cams: gSOAP-based ONVIF on :8000 with
+    # the digest realm "camara" and a self-signed cert CN="certificate".
+    # They never expose the word "Reolink" in their banners, so we fingerprint
+    # them by this distinctive realm. Confirmed against real Reolink doorbells.
+    ("Reolink (doorbell/OEM)", "high", re.compile(r"\bcamara\b", re.I), "realm"),
     ("Wyze",      "high",   re.compile(r"WyzeCam|wyze\.com", re.I),   "any"),
     ("Axis",      "high",   re.compile(r"AXIS\s+\w+\s+Network Camera", re.I), "any"),
     ("Axis",      "medium", re.compile(r"^AXIS\b", re.I),             "server"),
@@ -86,6 +91,9 @@ _GENERIC_SIGNALS = (
     re.compile(r"/onvif/", re.I),
     re.compile(r"^Boa/", re.I),  # Boa is the embedded HTTP server in many cams
     re.compile(r"GoAhead-Webs", re.I),
+    # gSOAP is the C SOAP library that powers nearly every IP camera /
+    # DVR ONVIF endpoint and is vanishingly rare on non-camera devices.
+    re.compile(r"\bgSOAP/", re.I),
 )
 
 

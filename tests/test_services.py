@@ -97,3 +97,34 @@ def test_classify_rtsp_only_is_medium_confidence_unflagged_vendor():
 def test_classify_empty_probes_is_not_flagged():
     m = classify("192.168.1.250", [])
     assert not m.is_flagged
+
+
+def test_classify_reolink_doorbell_by_camara_realm():
+    # Real-world signature captured from a Reolink doorbell: gSOAP/2.8 on
+    # port 8000, ONVIF SOAP, realm="camara", no "Reolink" anywhere.
+    probes = [
+        ServiceProbe(
+            host="192.168.68.17", port=554, protocol="rtsp",
+            rtsp_status="RTSP/1.0 200 OK",
+        ),
+        ServiceProbe(
+            host="192.168.68.17", port=8000, protocol="http",
+            server="gSOAP/2.8", realm="camara",
+        ),
+    ]
+    m = classify("192.168.68.17", probes)
+    assert m.is_flagged
+    assert m.vendor == "Reolink (doorbell/OEM)"
+    assert m.confidence == "high"
+
+
+def test_classify_gsoap_alone_is_generic_camera_signal():
+    probes = [
+        ServiceProbe(
+            host="192.168.1.50", port=8000, protocol="http", server="gSOAP/2.8",
+        )
+    ]
+    m = classify("192.168.1.50", probes)
+    assert m.is_flagged
+    assert m.confidence == "medium"
+    assert any("gSOAP" in e for e in m.evidence)
