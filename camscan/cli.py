@@ -57,7 +57,7 @@ def wifi(
         "--target",
         help="CIDR to scan (e.g. 192.168.1.0/24). Overrides auto-detection.",
     ),
-    timeout: float = typer.Option(30.0, "--timeout", help="Scan timeout in seconds."),
+    timeout: float = typer.Option(90.0, "--timeout", help="Scan timeout in seconds."),
     from_file: Path | None = typer.Option(
         None,
         "--from-file",
@@ -120,7 +120,7 @@ def bluetooth(
 @app.command(name="all")
 def scan_all(
     interface: str | None = typer.Option(None, "-i", "--interface"),
-    timeout: float = typer.Option(30.0, "--timeout"),
+    timeout: float = typer.Option(90.0, "--timeout"),
     duration: float = typer.Option(8.0, "--duration", help="BLE scan duration."),
     json_out: Path | None = typer.Option(None, "--json"),
     no_color: bool = typer.Option(False, "--no-color"),

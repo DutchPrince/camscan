@@ -113,11 +113,21 @@ def active_scan(
         result = run(cmd, timeout=timeout, needs_root=True)
         return parse_arp_scan(result.stdout)
     if have("nmap"):
-        cidr = target or _local_cidr(interface) or "192.168.0.0/24"
+        cidr = target or _local_cidr(interface)
+        if not cidr:
+            raise ScanError(
+                "Could not auto-detect local subnet. Pass --target <cidr> "
+                "(find your subnet with `ip -4 addr`)."
+            )
         # `--unprivileged` forces connect()-based discovery for non-root /
         # chroot environments (UserLAnd, Docker without --cap-add=NET_RAW).
+        # `-T4` + `--min-rate` keep scans responsive on phones.
         result = run(
-            ["nmap", "-sn", "--unprivileged", "-oX", "-", cidr],
+            [
+                "nmap", "-sn", "--unprivileged",
+                "-T4", "--min-rate", "200",
+                "-oX", "-", cidr,
+            ],
             timeout=timeout,
         )
         if not result.stdout.lstrip().startswith("<?xml"):
