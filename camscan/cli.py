@@ -15,6 +15,7 @@ from camscan.oui import normalize, vendor_of
 from camscan.report import render_bluetooth, render_wifi, to_json
 from camscan.runners import MissingBinaryError, NeedsRootError
 from camscan.vendors import classify
+from camscan.wifi import ScanError
 
 app = typer.Typer(
     add_completion=False,
@@ -51,6 +52,11 @@ def wifi(
     interface: str | None = typer.Option(
         None, "-i", "--interface", help="Network interface to scan from (e.g. wlan0)."
     ),
+    target: str | None = typer.Option(
+        None,
+        "--target",
+        help="CIDR to scan (e.g. 192.168.1.0/24). Overrides auto-detection.",
+    ),
     timeout: float = typer.Option(30.0, "--timeout", help="Scan timeout in seconds."),
     from_file: Path | None = typer.Option(
         None,
@@ -67,13 +73,22 @@ def wifi(
         if from_file is not None:
             devices = wifi_mod.parse_arp_scan(from_file.read_text(encoding="utf-8"))
         else:
-            devices = wifi_mod.active_scan(interface=interface, timeout=timeout)
+            devices = wifi_mod.active_scan(
+                interface=interface, timeout=timeout, target=target
+            )
     except NeedsRootError as e:
         console.print(f"[red]'{e}' needs root. Try: sudo camscan wifi ...[/red]")
         raise typer.Exit(code=2) from e
     except MissingBinaryError as e:
         console.print(f"[red]Required binary not found: {e}. Install arp-scan or nmap.[/red]")
         raise typer.Exit(code=3) from e
+    except ScanError as e:
+        console.print(f"[red]Scan failed: {e}[/red]")
+        console.print(
+            "[yellow]Hint: pass --target <cidr> explicitly, "
+            "or check that the interface is up.[/yellow]"
+        )
+        raise typer.Exit(code=4) from e
 
     render_wifi(console, devices)
     if json_out:
@@ -120,7 +135,7 @@ def scan_all(
     try:
         wifi_devices = wifi_mod.active_scan(interface=interface, timeout=timeout)
         render_wifi(console, wifi_devices)
-    except (NeedsRootError, MissingBinaryError) as e:
+    except (NeedsRootError, MissingBinaryError, ScanError) as e:
         console.print(f"[yellow]WiFi scan skipped: {e}[/yellow]")
 
     try:

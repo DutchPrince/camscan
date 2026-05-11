@@ -89,12 +89,22 @@ def _dedupe(devices: Iterable[Device]) -> list[Device]:
     return list(seen.values())
 
 
-def active_scan(interface: str | None = None, *, timeout: float = 30.0) -> list[Device]:
+class ScanError(RuntimeError):
+    """Underlying scanner returned an error."""
+
+
+def active_scan(
+    interface: str | None = None,
+    *,
+    timeout: float = 30.0,
+    target: str | None = None,
+) -> list[Device]:
     """Run an active LAN scan and return discovered devices.
 
     Tries `arp-scan` first; falls back to `nmap -sn` against the local /24
-    derived from the routing table. Raises MissingBinaryError if neither
-    binary is available.
+    (auto-detected via `ip route` or `ifconfig`, override with `target`).
+    Raises MissingBinaryError if neither binary is available, or ScanError
+    if the underlying scanner failed.
     """
     if have("arp-scan"):
         cmd = ["arp-scan", "--localnet", "--quiet"]
@@ -103,14 +113,29 @@ def active_scan(interface: str | None = None, *, timeout: float = 30.0) -> list[
         result = run(cmd, timeout=timeout, needs_root=True)
         return parse_arp_scan(result.stdout)
     if have("nmap"):
-        target = _local_cidr(interface) or "192.168.0.0/24"
-        result = run(["nmap", "-sn", "-oX", "-", target], timeout=timeout)
+        cidr = target or _local_cidr(interface) or "192.168.0.0/24"
+        # `--unprivileged` forces connect()-based discovery for non-root /
+        # chroot environments (UserLAnd, Docker without --cap-add=NET_RAW).
+        result = run(
+            ["nmap", "-sn", "--unprivileged", "-oX", "-", cidr],
+            timeout=timeout,
+        )
+        if not result.stdout.lstrip().startswith("<?xml"):
+            err = (result.stderr or result.stdout).strip() or "nmap produced no XML output"
+            raise ScanError(f"nmap failed for {cidr!r} (rc={result.rc}): {err}")
         return parse_nmap_xml(result.stdout)
     raise MissingBinaryError("arp-scan or nmap")
 
 
 def _local_cidr(interface: str | None) -> str | None:
-    """Best-effort lookup of the local /24 via `ip route`. None if unavailable."""
+    """Best-effort lookup of the local /24 via `ip route`, then `ifconfig`."""
+    cidr = _cidr_from_ip_route(interface)
+    if cidr:
+        return cidr
+    return _cidr_from_ifconfig(interface)
+
+
+def _cidr_from_ip_route(interface: str | None) -> str | None:
     if not have("ip"):
         return None
     cmd = ["ip", "-4", "route", "show"]
@@ -124,4 +149,30 @@ def _local_cidr(interface: str | None) -> str | None:
         parts = line.split()
         if parts and "/" in parts[0] and not parts[0].startswith("default"):
             return parts[0]
+    return None
+
+
+def _cidr_from_ifconfig(interface: str | None) -> str | None:
+    if not have("ifconfig"):
+        return None
+    cmd = ["ifconfig"] + ([interface] if interface else [])
+    try:
+        result = run(cmd, timeout=5.0)
+    except MissingBinaryError:
+        return None
+    ip = mask = None
+    for line in result.stdout.splitlines():
+        m = re.search(r"inet (?:addr:)?(\d+\.\d+\.\d+\.\d+)", line)
+        if m:
+            ip = m.group(1)
+        m = re.search(r"(?:Mask:|netmask )(\d+\.\d+\.\d+\.\d+)", line)
+        if m:
+            mask = m.group(1)
+        if ip and mask:
+            break
+    if not ip or ip.startswith("127."):
+        return None
+    if mask == "255.255.255.0":
+        octets = ip.split(".")
+        return f"{octets[0]}.{octets[1]}.{octets[2]}.0/24"
     return None
