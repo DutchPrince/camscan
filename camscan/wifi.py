@@ -57,8 +57,15 @@ def parse_arp_scan(output: str) -> list[Device]:
     return _dedupe(devices)
 
 
-def parse_nmap_xml(xml_text: str) -> list[Device]:
-    """Parse stdout of `nmap -sn -oX -`."""
+def parse_nmap_xml(xml_text: str, *, arp_cache: dict[str, str] | None = None) -> list[Device]:
+    """Parse stdout of `nmap -sn -oX -`.
+
+    `arp_cache` (optional `{ip: mac}` map) is consulted when nmap doesn't
+    provide a MAC for a host — this is the common case in unprivileged /
+    chroot environments where nmap uses TCP-connect discovery and never
+    sees ARP replies.
+    """
+    arp_cache = arp_cache or {}
     root = ET.fromstring(xml_text)
     devices: list[Device] = []
     for host in root.iter("host"):
@@ -75,18 +82,66 @@ def parse_nmap_xml(xml_text: str) -> list[Device]:
             elif kind == "mac":
                 mac = addr.get("addr")
                 vendor = addr.get("vendor") or None
+        if not mac and ip:
+            mac = arp_cache.get(ip)
         if not mac:
+            if not ip:
+                continue
+            devices.append(Device(mac="", ip=ip, vendor=None, match=None))
             continue
         devices.append(_enrich(mac, ip, vendor))
     return _dedupe(devices)
 
 
+def read_arp_cache() -> dict[str, str]:
+    """Return `{ip: mac}` from `/proc/net/arp`, falling back to `arp -n`."""
+    try:
+        with open("/proc/net/arp", encoding="utf-8") as fh:
+            return _parse_proc_arp(fh.read())
+    except (FileNotFoundError, PermissionError, OSError):
+        pass
+    if have("arp"):
+        try:
+            result = run(["arp", "-n"], timeout=5.0)
+        except MissingBinaryError:
+            return {}
+        return _parse_arp_n(result.stdout)
+    return {}
+
+
+_PROC_ARP_LINE = re.compile(
+    r"^(?P<ip>\d{1,3}(?:\.\d{1,3}){3})\s+\S+\s+\S+\s+(?P<mac>[0-9A-Fa-f:]{17})\s"
+)
+_ARP_N_LINE = re.compile(
+    r"^(?P<ip>\d{1,3}(?:\.\d{1,3}){3})\s+\S+\s+(?P<mac>[0-9A-Fa-f:]{17})"
+)
+
+
+def _parse_proc_arp(text: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in text.splitlines()[1:]:  # skip header
+        m = _PROC_ARP_LINE.match(line)
+        if m and m.group("mac") != "00:00:00:00:00:00":
+            out[m.group("ip")] = m.group("mac").upper()
+    return out
+
+
+def _parse_arp_n(text: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        m = _ARP_N_LINE.match(line)
+        if m:
+            out[m.group("ip")] = m.group("mac").upper()
+    return out
+
+
 def _dedupe(devices: Iterable[Device]) -> list[Device]:
     seen: dict[str, Device] = {}
     for d in devices:
-        existing = seen.get(d.mac)
+        key = d.mac or f"ip:{d.ip}"
+        existing = seen.get(key)
         if existing is None or (existing.ip is None and d.ip is not None):
-            seen[d.mac] = d
+            seen[key] = d
     return list(seen.values())
 
 
@@ -134,7 +189,7 @@ def active_scan(
         if not result.stdout.lstrip().startswith("<?xml"):
             err = (result.stderr or result.stdout).strip() or "nmap produced no XML output"
             raise ScanError(f"nmap failed for {cidr!r} (rc={result.rc}): {err}")
-        return parse_nmap_xml(result.stdout)
+        return parse_nmap_xml(result.stdout, arp_cache=read_arp_cache())
     raise MissingBinaryError("arp-scan or nmap")
 
 

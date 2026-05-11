@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from camscan.wifi import parse_arp_scan, parse_nmap_xml
+from camscan.wifi import _parse_arp_n, _parse_proc_arp, parse_arp_scan, parse_nmap_xml
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -46,3 +46,56 @@ def test_parse_arp_scan_ignores_header_and_footer_lines():
         "4 packets received by filter\n"
     )
     assert devices == []
+
+
+_NMAP_NO_MAC = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<nmaprun>
+  <host>
+    <status state="up"/>
+    <address addr="192.168.68.1" addrtype="ipv4"/>
+  </host>
+  <host>
+    <status state="up"/>
+    <address addr="192.168.68.42" addrtype="ipv4"/>
+  </host>
+</nmaprun>
+"""
+
+
+def test_arp_cache_enriches_hosts_without_mac():
+    arp = {"192.168.68.42": "28:57:BE:00:11:22"}
+    devices = parse_nmap_xml(_NMAP_NO_MAC, arp_cache=arp)
+    by_ip = {d.ip: d for d in devices}
+
+    hikvision = by_ip["192.168.68.42"]
+    assert hikvision.mac == "28:57:BE:00:11:22"
+    assert hikvision.is_flagged
+
+    router = by_ip["192.168.68.1"]
+    assert router.mac == ""
+    assert not router.is_flagged
+
+
+def test_proc_net_arp_parser():
+    sample = (
+        "IP address       HW type     Flags       HW address            Mask     Device\n"
+        "192.168.68.1     0x1         0x2         b0:a7:b9:ba:97:b0     *        wlan0\n"
+        "192.168.68.42    0x1         0x2         28:57:be:00:11:22     *        wlan0\n"
+        "192.168.68.99    0x1         0x0         00:00:00:00:00:00     *        wlan0\n"
+    )
+    parsed = _parse_proc_arp(sample)
+    assert parsed == {
+        "192.168.68.1": "B0:A7:B9:BA:97:B0",
+        "192.168.68.42": "28:57:BE:00:11:22",
+    }
+
+
+def test_arp_n_parser():
+    sample = (
+        "Address                  HWtype  HWaddress           Flags Mask            Iface\n"
+        "192.168.68.1             ether   b0:a7:b9:ba:97:b0   C                     wlan0\n"
+        "192.168.68.42            ether   28:57:be:00:11:22   C                     wlan0\n"
+    )
+    parsed = _parse_arp_n(sample)
+    assert parsed["192.168.68.42"] == "28:57:BE:00:11:22"
