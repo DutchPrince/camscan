@@ -6,6 +6,7 @@ Parsers are pure functions and unit-tested with captured fixtures.
 
 from __future__ import annotations
 
+import ipaddress
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
@@ -170,19 +171,29 @@ def _cidr_from_ifconfig(interface: str | None) -> str | None:
         result = run(cmd, timeout=5.0)
     except MissingBinaryError:
         return None
+    for ip, mask in _ifconfig_inet_pairs(result.stdout):
+        if ip.startswith("127."):
+            continue
+        try:
+            return str(ipaddress.IPv4Network(f"{ip}/{mask}", strict=False))
+        except ValueError:
+            continue
+    return None
+
+
+def _ifconfig_inet_pairs(text: str):
+    """Yield (ip, mask) tuples found in ifconfig output, in order."""
     ip = mask = None
-    for line in result.stdout.splitlines():
+    for line in text.splitlines():
         m = re.search(r"inet (?:addr:)?(\d+\.\d+\.\d+\.\d+)", line)
         if m:
+            if ip and mask:
+                yield ip, mask
+                ip = mask = None
             ip = m.group(1)
         m = re.search(r"(?:Mask:|netmask )(\d+\.\d+\.\d+\.\d+)", line)
         if m:
             mask = m.group(1)
-        if ip and mask:
-            break
-    if not ip or ip.startswith("127."):
-        return None
-    if mask == "255.255.255.0":
-        octets = ip.split(".")
-        return f"{octets[0]}.{octets[1]}.{octets[2]}.0/24"
-    return None
+            if ip:
+                yield ip, mask
+                ip = mask = None
